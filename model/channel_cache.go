@@ -84,10 +84,13 @@ func InitChannelCache() {
 	for i, channel := range newChannelId2channel {
 		if channel.ChannelInfo.IsMultiKey {
 			channel.Keys = channel.GetKeys()
-			if channel.ChannelInfo.MultiKeyMode == constant.MultiKeyModePolling {
+			if channel.ChannelInfo.MultiKeyMode == constant.MultiKeyModePolling ||
+				channel.ChannelInfo.MultiKeyMode == constant.MultiKeyModeSticky {
 				if oldChannel, ok := channelsIDM[i]; ok {
-					// 存在旧的渠道，如果是多key且轮询，保留轮询索引信息
-					if oldChannel.ChannelInfo.IsMultiKey && oldChannel.ChannelInfo.MultiKeyMode == constant.MultiKeyModePolling {
+					// 存在旧的渠道，如果是多key且轮询/密钥保持，保留轮询索引信息
+					if oldChannel.ChannelInfo.IsMultiKey &&
+						(oldChannel.ChannelInfo.MultiKeyMode == constant.MultiKeyModePolling ||
+							oldChannel.ChannelInfo.MultiKeyMode == constant.MultiKeyModeSticky) {
 						channel.ChannelInfo.MultiKeyPollingIndex = oldChannel.ChannelInfo.MultiKeyPollingIndex
 					}
 				}

@@ -232,6 +232,14 @@ export function MultiKeyManageDialog({
 
   if (!currentRow) return null
 
+  const mode = currentRow.channel_info?.multi_key_mode
+  let multiKeyModeLabel = t('Polling')
+  if (mode === 'random') {
+    multiKeyModeLabel = t('Random')
+  } else if (mode === 'sticky') {
+    multiKeyModeLabel = t('Key stickiness')
+  }
+
   return (
     <>
       <Dialog
@@ -247,11 +255,7 @@ export function MultiKeyManageDialog({
             />
             {currentRow.channel_info?.multi_key_mode && (
               <StatusBadge
-                label={
-                  currentRow.channel_info.multi_key_mode === 'random'
-                    ? t('Random')
-                    : t('Polling')
-                }
+                label={multiKeyModeLabel}
                 variant='neutral'
                 copyable={false}
               />

@@ -251,7 +251,11 @@ func (channel *Channel) GetNextEnabledKey() (string, int, *types.NewAPIError) {
 		// Randomly pick one enabled key
 		selectedIdx := enabledIdx[rand.Intn(len(enabledIdx))]
 		return keys[selectedIdx], selectedIdx, nil
-	case constant.MultiKeyModePolling:
+	case constant.MultiKeyModePolling, constant.MultiKeyModeSticky:
+		// Sticky mode shares the polling rotation as its fallback: it binds
+		// sessions to keys only while session affinity is enabled, and rotates
+		// keys like polling otherwise (or when no usable session identity
+		// exists).
 		// Use channel-specific lock to ensure thread-safe polling
 
 		channelInfo, err := CacheGetChannelInfo(channel.Id)

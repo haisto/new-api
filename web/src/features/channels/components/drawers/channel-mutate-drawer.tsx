@@ -577,6 +577,24 @@ export function ChannelMutateDrawer({
   const formValues = form.watch()
   const multiKeyMode = formValues.multi_key_mode
   const multiKeyType = formValues.multi_key_type
+  let multiKeyStrategyDescription: ReactNode
+  if (multiKeyType === 'polling') {
+    multiKeyStrategyDescription = (
+      <span className='text-warning'>
+        {t(
+          'Polling mode requires Redis and memory cache, otherwise performance will be significantly degraded'
+        )}
+      </span>
+    )
+  } else if (multiKeyType === 'sticky') {
+    multiKeyStrategyDescription = t(
+      'Requires session affinity to be enabled, otherwise falls back to polling'
+    )
+  } else {
+    multiKeyStrategyDescription = t(
+      'Randomly select a key from the pool for each request'
+    )
+  }
   const keyMode = formValues.key_mode
   const currentGroups = formValues.group
   const currentType = formValues.type
@@ -4533,6 +4551,10 @@ export function ChannelMutateDrawer({
                             value: 'polling',
                             label: t('Polling'),
                           },
+                          {
+                            value: 'sticky',
+                            label: t('Key stickiness'),
+                          },
                         ]}
                         onValueChange={field.onChange}
                         value={field.value}
@@ -4550,21 +4572,14 @@ export function ChannelMutateDrawer({
                             <SelectItem value='polling'>
                               {t('Polling')}
                             </SelectItem>
+                            <SelectItem value='sticky'>
+                              {t('Key stickiness')}
+                            </SelectItem>
                           </SelectGroup>
                         </SelectContent>
                       </Select>
                       <FormDescription>
-                        {multiKeyType === 'polling' ? (
-                          <span className='text-warning'>
-                            {t(
-                              'Polling mode requires Redis and memory cache, otherwise performance will be significantly degraded'
-                            )}
-                          </span>
-                        ) : (
-                          t(
-                            'Randomly select a key from the pool for each request'
-                          )
-                        )}
+                        {multiKeyStrategyDescription}
                       </FormDescription>
                       <FormMessage />
                     </FormItem>

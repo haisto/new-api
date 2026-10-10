@@ -64,9 +64,9 @@ func getChannelKeyAffinityCache() *cachex.HybridCache[string] {
 
 // channelKeyAffinityEnabled reports whether session-to-key binding is active.
 // It deliberately follows the existing channel-affinity master switch shown in
-// the routing settings UI (channel_affinity_setting.enabled), so enabling
-// session affinity turns the key binding on together with it and no separate
-// control is needed.
+// the routing settings UI (channel_affinity_setting.enabled): the sticky
+// multi-key strategy needs it enabled, otherwise the channel falls back to
+// polling.
 func channelKeyAffinityEnabled() bool {
 	setting := operation_setting.GetChannelAffinitySetting()
 	return setting != nil && setting.Enabled
@@ -80,14 +80,16 @@ func channelKeyAffinityEnabled() bool {
 // only once that key is disabled or the binding expires. The fingerprint comes
 // from the channel-affinity rules when one matched; otherwise it degrades to the
 // token-based session identity so the feature also works without any rule
-// configured. When session affinity is disabled, has no usable session
-// identity, or the channel is not multi-key, it falls straight through to pick.
+// configured. Only channels whose multi-key strategy is the sticky mode
+// participate while the session-affinity master switch is on; random/polling
+// channels always keep rotating keys, and when the request has no usable
+// session identity it falls straight through to pick.
 func SelectMultiKeyForChannel(
 	c *gin.Context,
 	channel *model.Channel,
 	pick func() (string, int, *types.NewAPIError),
 ) (string, int, *types.NewAPIError) {
-	if !channelKeyAffinityEnabled() || channel == nil || !channel.ChannelInfo.IsMultiKey {
+	if !channelKeyAffinityEnabled() || channel == nil || !channel.ChannelInfo.IsMultiKey || channel.ChannelInfo.MultiKeyMode != constant.MultiKeyModeSticky {
 		return pick()
 	}
 	meta, ok := getChannelAffinityMeta(c)
@@ -178,12 +180,16 @@ func buildChannelKeyAffinityFallbackMeta(c *gin.Context) (channelAffinityMeta, b
 // successful key so the next request starts there instead of returning to the
 // failed one. Reproducing an existing binding is a no-op write. The call is
 // cheap and safe on paths that carry no key-affinity session identity (session
-// affinity off, single-key channel, or no fingerprint): they return immediately.
+// affinity off, channel not in the sticky multi-key mode, single-key channel,
+// or no fingerprint): they return immediately.
 func RecordChannelKeyAffinitySuccess(c *gin.Context) {
 	if c == nil {
 		return
 	}
 	if !channelKeyAffinityEnabled() {
+		return
+	}
+	if common.GetContextKeyString(c, constant.ContextKeyChannelMultiKeyMode) != string(constant.MultiKeyModeSticky) {
 		return
 	}
 	if !common.GetContextKeyBool(c, constant.ContextKeyChannelIsMultiKey) {

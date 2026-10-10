@@ -29,7 +29,7 @@ export const channelInfoSchema = z.object({
   multi_key_disabled_reason: z.record(z.string(), z.string()).optional(),
   multi_key_disabled_time: z.record(z.string(), z.number()).optional(),
   multi_key_polling_index: z.number().default(0),
-  multi_key_mode: z.enum(['random', 'polling']).default('random'),
+  multi_key_mode: z.enum(['random', 'polling', 'sticky']).default('random'),
 })
 
 export type ChannelInfo = z.infer<typeof channelInfoSchema>
@@ -383,7 +383,7 @@ export interface ChannelFormData {
 
 export interface AddChannelRequest {
   mode: 'single' | 'batch' | 'multi_to_single'
-  multi_key_mode?: 'random' | 'polling'
+  multi_key_mode?: 'random' | 'polling' | 'sticky'
   batch_add_set_key_prefix_2_name?: boolean
   channel: Partial<Channel>
 }
