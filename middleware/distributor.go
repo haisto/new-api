@@ -126,6 +126,7 @@ func Distribute() func(c *gin.Context) {
 		c.Next()
 		if channel != nil && c.Writer != nil && c.Writer.Status() < http.StatusBadRequest {
 			service.RecordChannelAffinity(c, channel.Id)
+			service.RecordChannelKeyAffinitySuccess(c)
 		}
 	}
 }
@@ -616,7 +617,7 @@ func SetupContextForSelectedChannel(c *gin.Context, channel *model.Channel, mode
 	common.SetContextKey(c, constant.ContextKeyChannelModelMapping, channel.GetModelMapping())
 	common.SetContextKey(c, constant.ContextKeyChannelStatusCodeMapping, channel.GetStatusCodeMapping())
 
-	key, index, newAPIError := channel.GetNextEnabledKey()
+	key, index, newAPIError := service.SelectMultiKeyForChannel(c, channel, channel.GetNextEnabledKey)
 	if newAPIError != nil {
 		return newAPIError
 	}
