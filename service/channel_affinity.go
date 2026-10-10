@@ -209,6 +209,10 @@ func ClearChannelAffinityCacheAll() int {
 			common.SysError(fmt.Sprintf("channel affinity cache delete many failed: err=%v", err))
 		}
 	}
+	// Session key bindings share the affinity lifecycle: the clear-all action
+	// drops them too, otherwise stale bindings would survive and keep sessions
+	// pinned to old keys. Their count is deliberately not surfaced.
+	ClearChannelKeyAffinityCacheAll()
 	return len(keys)
 }
 
@@ -242,6 +246,11 @@ func ClearChannelAffinityCacheByRuleName(ruleName string) (int, error) {
 	cache := getChannelAffinityCache()
 	deleted, err := cache.DeleteByPrefix(ruleName)
 	if err != nil {
+		return 0, err
+	}
+	// Drop this rule's session key bindings as well; their count is not
+	// surfaced alongside the channel cache count.
+	if _, err := ClearChannelKeyAffinityCacheByRuleName(ruleName); err != nil {
 		return 0, err
 	}
 	return deleted, nil

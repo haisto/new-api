@@ -1,6 +1,7 @@
 package service
 
 import (
+	"fmt"
 	"strconv"
 	"strings"
 	"sync"
@@ -61,6 +62,16 @@ func getChannelKeyAffinityCache() *cachex.HybridCache[string] {
 	return channelKeyAffinityCache
 }
 
+// channelKeyAffinityEnabled reports whether session-to-key binding is active.
+// It deliberately follows the existing channel-affinity master switch shown in
+// the routing settings UI (channel_affinity_setting.enabled), so enabling
+// session affinity turns the key binding on together with it and no separate
+// control is needed.
+func channelKeyAffinityEnabled() bool {
+	setting := operation_setting.GetChannelAffinitySetting()
+	return setting != nil && setting.Enabled
+}
+
 // SelectMultiKeyForChannel wraps the channel's multi-key picker with session
 // stickiness: the first attempt of a request reuses the key bound to the
 // session fingerprint, and establishes the binding when none exists yet. Retries
@@ -69,15 +80,14 @@ func getChannelKeyAffinityCache() *cachex.HybridCache[string] {
 // only once that key is disabled or the binding expires. The fingerprint comes
 // from the channel-affinity rules when one matched; otherwise it degrades to the
 // token-based session identity so the feature also works without any rule
-// configured. When key affinity is disabled, has no usable session identity, or
-// the channel is not multi-key, it falls straight through to pick.
+// configured. When session affinity is disabled, has no usable session
+// identity, or the channel is not multi-key, it falls straight through to pick.
 func SelectMultiKeyForChannel(
 	c *gin.Context,
 	channel *model.Channel,
 	pick func() (string, int, *types.NewAPIError),
 ) (string, int, *types.NewAPIError) {
-	setting := operation_setting.GetChannelKeyAffinitySetting()
-	if setting == nil || !setting.Enabled || channel == nil || !channel.ChannelInfo.IsMultiKey {
+	if !channelKeyAffinityEnabled() || channel == nil || !channel.ChannelInfo.IsMultiKey {
 		return pick()
 	}
 	meta, ok := getChannelAffinityMeta(c)
@@ -167,14 +177,13 @@ func buildChannelKeyAffinityFallbackMeta(c *gin.Context) (channelAffinityMeta, b
 // a retry succeeded on another key, this hook moves the binding to the
 // successful key so the next request starts there instead of returning to the
 // failed one. Reproducing an existing binding is a no-op write. The call is
-// cheap and safe on paths that carry no key-affinity session identity (feature
-// off, single-key channel, or no fingerprint): they return immediately.
+// cheap and safe on paths that carry no key-affinity session identity (session
+// affinity off, single-key channel, or no fingerprint): they return immediately.
 func RecordChannelKeyAffinitySuccess(c *gin.Context) {
 	if c == nil {
 		return
 	}
-	setting := operation_setting.GetChannelKeyAffinitySetting()
-	if setting == nil || !setting.Enabled {
+	if !channelKeyAffinityEnabled() {
 		return
 	}
 	if !common.GetContextKeyBool(c, constant.ContextKeyChannelIsMultiKey) {
@@ -196,6 +205,41 @@ func RecordChannelKeyAffinitySuccess(c *gin.Context) {
 	bindingKey, ttl := buildChannelKeyAffinityCacheKey(meta)
 	value := strconv.Itoa(channelID) + ":" + strconv.Itoa(index) + ":" + affinityFingerprint(key)
 	_ = getChannelKeyAffinityCache().SetWithTTL(bindingKey, value, ttl)
+}
+
+// ClearChannelKeyAffinityCacheAll deletes every session key binding and returns
+// the number removed. The existing affinity cache clear-all action calls it so
+// the session key bindings are cleared together with the channel affinity
+// caches; otherwise stale bindings would survive and keep sessions pinned to
+// old keys.
+func ClearChannelKeyAffinityCacheAll() int {
+	cache := getChannelKeyAffinityCache()
+	keys, err := cache.Keys()
+	if err != nil {
+		common.SysError(fmt.Sprintf("channel key affinity cache list keys failed: err=%v", err))
+		keys = nil
+	}
+	if len(keys) > 0 {
+		if _, err := cache.DeleteMany(keys); err != nil {
+			common.SysError(fmt.Sprintf("channel key affinity cache delete many failed: err=%v", err))
+		}
+	}
+	return len(keys)
+}
+
+// ClearChannelKeyAffinityCacheByRuleName deletes session key bindings created
+// from the given channel-affinity rule (their cache keys start with the rule
+// name) and returns the number removed. Bindings from the token fallback are
+// left untouched because they are not rule-scoped.
+func ClearChannelKeyAffinityCacheByRuleName(ruleName string) (int, error) {
+	if ruleName = strings.TrimSpace(ruleName); ruleName == "" {
+		return 0, fmt.Errorf("rule_name 不能为空")
+	}
+	deleted, err := getChannelKeyAffinityCache().DeleteByPrefix(ruleName)
+	if err != nil {
+		return 0, err
+	}
+	return deleted, nil
 }
 
 // resolveChannelKeyAffinity returns the bound key when it still belongs to the
